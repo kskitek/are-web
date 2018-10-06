@@ -3,34 +3,96 @@ import Html exposing (Html, button, input, div, text)
 import Html.Attributes exposing (type_, placeholder)
 import Html.Events exposing (onClick, onInput)
 import Debug
+import Http
+import Json.Decode
 
 main =
-  Browser.sandbox { init = initModel, update = update, view = view }
+  Browser.element { init = initModel, subscriptions = subscriptions, update = update,  view = view }
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
 
 type alias Model = {
     username : String
     , password : String
+    , token : Maybe String
+    , error : Maybe Http.Error
+    }
+
+type alias Token = {
+    token : String
     }
 
 type Msg = Login
     | SetField Field String
+    | LoginResult (Result Http.Error Token)
 
 type Field = UserName
     | Password
 
-initModel : Model
-initModel = {
-    username = ""
+initModel : () -> (Model, Cmd Msg)
+initModel _ = ( { username = ""
     , password = ""
+    , token = Nothing
+    , error = Nothing
     }
+    , Cmd.none
+    )
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     SetField field value ->
         updateField field model value
     Login ->
         login model
+    LoginResult result ->
+        (handleLoginResult model result, Cmd.none)
+
+updateField : Field -> Model -> String -> (Model, Cmd Msg)
+updateField field model value =
+    case field of 
+        UserName ->
+            ({ model | username = value }, Cmd.none)
+        Password ->
+            ({ model | password = value }, Cmd.none)
+
+login : Model -> (Model, Cmd Msg)
+login model =
+    let
+        x = Debug.log "logging in" model
+        address = "http://localhost:8080/login"
+        payload = Http.stringBody "application/json" """{"name" : "101", "password" : "102"}"""
+        request = Http.request
+            { method = "POST"
+            , headers = []
+            , url = address
+            , body = payload
+            , expect = Http.expectJson decodeToken
+            , timeout = Nothing
+            , withCredentials = False
+            }
+    in
+    (model, Http.send LoginResult request)
+
+handleLoginResult : Model -> (Result Http.Error Token)  -> Model
+handleLoginResult model result = 
+    let
+        _ = Debug.log "loginResult" (Debug.toString result)
+        (token, error) = case result of
+            Err err ->
+                (Nothing, Just err)
+            Ok payload ->
+                (Just payload.token, Nothing)
+    in
+    {model | token = token, error = error}
+
+
+decodeToken : Json.Decode.Decoder Token
+decodeToken =
+  Json.Decode.map Token
+    (Json.Decode.field "token" Json.Decode.string)
 
 view : Model -> Html Msg
 view model =
@@ -44,18 +106,20 @@ view model =
 viewValidation : Model -> Html Msg
 viewValidation model =
     let
-        hidden = False
+        hidden = model.error == Nothing
+        message = Maybe.map errorCodeToMessage model.error |> Maybe.withDefault "Unable to log in"
     in
-    div [ Html.Attributes.hidden hidden, Html.Attributes.class "validation" ] [ text "Invalid input" ]
+    div [ Html.Attributes.hidden hidden, Html.Attributes.class "validation" ] [ text message ]
 
-updateField : Field -> Model -> String -> Model
-updateField field model value =
-    case field of 
-        UserName ->
-            { model | username = value }
-        Password ->
-            { model | password = value }
-
-login : model -> model
-login model =
-    Debug.log "model" model
+errorCodeToMessage : Http.Error -> String
+errorCodeToMessage error =
+    let
+        defaultMsg = "Unable to log in"
+    in
+    case error of
+        Http.BadStatus response ->
+            case response.status.code of
+                403 ->
+                    "Invalid username or password"
+                _ -> defaultMsg
+        _ -> defaultMsg
