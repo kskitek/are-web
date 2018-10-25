@@ -3,10 +3,11 @@ module Main exposing (Field(..), Model, Msg(..), Token, decodeToken, errorCodeTo
 import Browser
 import Debug
 import Html exposing (Html, button, div, input, text)
-import Html.Attributes exposing (placeholder, type_)
+import Html.Attributes exposing (class, placeholder, type_)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode
+import Maybe
 
 
 main =
@@ -127,24 +128,31 @@ decodeToken =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ input [ onInput <| SetField UserName, type_ "text", placeholder "Username" ] []
-        , input [ onInput <| SetField Password, type_ "password", placeholder "Password" ] []
-        , button [ onClick Login ] [ text "Login" ]
-        , viewValidation model
+    div [ class "container" ]
+        [ div [ class "login-input" ]
+            [ input [ onInput <| SetField UserName, type_ "text", placeholder "Username" ] []
+            , input [ onInput <| SetField Password, type_ "password", placeholder "Password" ] []
+            , button [ onClick Login ] [ text "Login" ]
+            , viewValidation model
+            ]
         ]
 
 
 viewValidation : Model -> Html Msg
 viewValidation model =
     let
-        hidden =
-            model.error == Nothing
+        _ =
+            model
+                |> Debug.toString
+                |> Debug.log "validation"
+
+        wasError =
+            model.error /= Nothing
 
         message =
             Maybe.map errorCodeToMessage model.error |> Maybe.withDefault "Unable to log in"
     in
-    div [ Html.Attributes.hidden hidden, Html.Attributes.class "validation" ] [ text message ]
+    div [ Html.Attributes.classList [ ( "validation", True ), ( "invalid", wasError ) ] ] [ text message ]
 
 
 errorCodeToMessage : Http.Error -> String
